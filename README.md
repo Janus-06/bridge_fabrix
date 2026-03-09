@@ -97,6 +97,20 @@ Notes:
 - The build script expects a Windows environment
 - Runtime still works without `npm install` because the bridge itself uses only built-in Node modules
 
+## GitHub artifact build
+
+The repository does not commit the built `exe` binary.
+
+Instead, use the GitHub Actions workflow:
+
+- Workflow: `Build Windows EXE`
+- Output artifact: `fabrix-bridge-windows-exe`
+
+That artifact contains:
+
+- `dist/fabrix-bridge.exe`
+- `README.md`
+
 ## Probe script
 
 Use the included probe script to inspect upstream responses directly:
