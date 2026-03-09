@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
+const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { URL } = require("node:url");
 const { Readable } = require("node:stream");
@@ -26,6 +27,7 @@ const FABRIX_PROVIDER_ID = "fabrix";
 const FABRIX_DEFAULT_MODEL_KEY = "default";
 const OPENCODE_CONFIG_SCHEMA = "https://opencode.ai/config.json";
 const WINDOWS_LAUNCHER_RELATIVE_PATH = path.join("scripts", "windows-launcher.ps1");
+const WINDOWS_LAUNCHER_ASSET_KEY = "windows-launcher.ps1";
 
 const HELP_TEXT = `
 ${APP_NAME}
@@ -546,15 +548,48 @@ function openBrowser(url) {
   }
 }
 
-function isSeaExecutable() {
+function getSeaModule() {
   try {
-    const sea = require("node:sea");
-    if (typeof sea.isSea === "function") {
-      return sea.isSea();
-    }
+    return require("node:sea");
   } catch {
   }
+  return null;
+}
+
+function isSeaExecutable() {
+  const sea = getSeaModule();
+  if (sea && typeof sea.isSea === "function") {
+    return sea.isSea();
+  }
   return path.basename(process.execPath).toLowerCase() !== "node.exe";
+}
+
+function getEmbeddedNativeLauncherScript() {
+  const sea = getSeaModule();
+  if (!sea || typeof sea.getAsset !== "function") {
+    return "";
+  }
+  try {
+    return sea.getAsset(WINDOWS_LAUNCHER_ASSET_KEY, "utf8");
+  } catch {
+    return "";
+  }
+}
+
+function materializeNativeLauncherScript() {
+  const script = getEmbeddedNativeLauncherScript();
+  if (!script) {
+    return "";
+  }
+  const hash = crypto.createHash("sha256").update(script).digest("hex").slice(0, 12);
+  const runtimeDir = path.join(os.tmpdir(), "sds-fabrix-bridge-runtime");
+  const runtimePath = path.join(runtimeDir, `windows-launcher-${hash}.ps1`);
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  if (!fs.existsSync(runtimePath)) {
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    fs.writeFileSync(runtimePath, Buffer.concat([bom, Buffer.from(script, "utf8")]));
+  }
+  return runtimePath;
 }
 
 function resolveNativeLauncherPath() {
@@ -566,6 +601,10 @@ function resolveNativeLauncherPath() {
     if (fs.existsSync(candidate)) {
       return candidate;
     }
+  }
+  const runtimePath = materializeNativeLauncherScript();
+  if (runtimePath) {
+    return runtimePath;
   }
   return candidates[0];
 }

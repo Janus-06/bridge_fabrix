@@ -1,5 +1,8 @@
 {
   "main": "app.js",
   "output": "dist/fabrix-bridge.blob",
+  "assets": {
+    "windows-launcher.ps1": "scripts/windows-launcher.ps1"
+  },
   "disableExperimentalSEAWarning": true
 }
