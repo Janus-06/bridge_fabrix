@@ -7,6 +7,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node app.js",
+    "launcher": "node app.js launcher",
     "configure": "node app.js configure",
     "setup-ui": "node app.js setup-ui",
     "serve": "node app.js serve",

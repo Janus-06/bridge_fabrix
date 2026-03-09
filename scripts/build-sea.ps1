@@ -4,10 +4,14 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $distDir = Join-Path $projectRoot "dist"
 $blobPath = Join-Path $distDir "fabrix-bridge.blob"
 $targetExe = Join-Path $distDir "fabrix-bridge.exe"
+$launcherSource = Join-Path $projectRoot "scripts\\windows-launcher.ps1"
+$launcherDir = Join-Path $distDir "scripts"
+$launcherTarget = Join-Path $launcherDir "windows-launcher.ps1"
 $nodeExe = (Get-Command node).Source
 $sentinel = "NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2"
 
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+New-Item -ItemType Directory -Force -Path $launcherDir | Out-Null
 
 Write-Host "Building SEA blob..."
 Push-Location $projectRoot
@@ -27,5 +31,8 @@ if (-not (Test-Path $postjectCmd)) {
 
 Write-Host "Injecting SEA blob..."
 & $postjectCmd $targetExe NODE_SEA_BLOB $blobPath --sentinel-fuse $sentinel --overwrite
+
+Write-Host "Copying launcher assets..."
+Copy-Item $launcherSource $launcherTarget -Force
 
 Write-Host "Built $targetExe"

@@ -25,6 +25,7 @@ const MAX_BODY_BYTES = 5 * 1024 * 1024;
 const FABRIX_PROVIDER_ID = "fabrix";
 const FABRIX_DEFAULT_MODEL_KEY = "default";
 const OPENCODE_CONFIG_SCHEMA = "https://opencode.ai/config.json";
+const WINDOWS_LAUNCHER_RELATIVE_PATH = path.join("scripts", "windows-launcher.ps1");
 
 const HELP_TEXT = `
 ${APP_NAME}
@@ -32,6 +33,7 @@ ${APP_NAME}
 Usage:
   node app.js
   node app.js run
+  node app.js launcher
   node app.js configure
   node app.js setup-ui
   node app.js serve
@@ -47,6 +49,8 @@ Options:
   --refresh             Force refresh when listing models
   --opencode <path>     Override OpenCode config path
   --json                Print JSON output when supported
+  --preview-state <v>   Native launcher preview state (setup|running)
+  --layout-check        Run native launcher layout validation
 `;
 
 async function main() {
@@ -69,6 +73,9 @@ async function main() {
     case "configure":
       await configureCommand(configPath, args);
       return;
+    case "launcher":
+      await launcherCommand(configPath, args);
+      return;
     case "setup-ui":
       await setupUiCommand(configPath, args);
       return;
@@ -82,7 +89,7 @@ async function main() {
       await serveCommand(configPath);
       return;
     case "run":
-      await runCommand(configPath);
+      await runCommand(configPath, args);
       return;
     default:
       console.error(`Unknown command: ${command}`);
@@ -91,7 +98,11 @@ async function main() {
   }
 }
 
-async function runCommand(configPath) {
+async function runCommand(configPath, args = {}) {
+  if (canUseNativeLauncher()) {
+    await startNativeLauncher(configPath, argsToLauncherOptions(args));
+    return;
+  }
   let config = loadConfig(configPath);
   if (!isConfigComplete(config)) {
     config = await startSetupApp(config, configPath, { startAfterSave: true });
@@ -108,6 +119,10 @@ async function serveCommand(configPath) {
 }
 
 async function configureCommand(configPath, args) {
+  if (args.cli !== true && canUseNativeLauncher()) {
+    await startNativeLauncher(configPath, argsToLauncherOptions(args));
+    return;
+  }
   const existing = loadConfig(configPath);
   const startAfterSave = args.start === true;
 
@@ -126,11 +141,22 @@ async function configureCommand(configPath, args) {
 }
 
 async function setupUiCommand(configPath, args) {
+  if (canUseNativeLauncher()) {
+    await startNativeLauncher(configPath, argsToLauncherOptions(args));
+    return;
+  }
   const existing = loadConfig(configPath);
   const config = await startSetupApp(existing, configPath, { startAfterSave: args.start === true });
   if (args.start === true) {
     await startServer(config, configPath);
   }
+}
+
+async function launcherCommand(configPath, args) {
+  if (!canUseNativeLauncher()) {
+    throw new Error("Native launcher is only available on Windows.");
+  }
+  await startNativeLauncher(configPath, argsToLauncherOptions(args));
 }
 
 async function modelsCommand(configPath, refresh, asJson) {
@@ -518,6 +544,93 @@ function openBrowser(url) {
   } catch {
     console.log(`Open the setup URL manually: ${url}`);
   }
+}
+
+function isSeaExecutable() {
+  try {
+    const sea = require("node:sea");
+    if (typeof sea.isSea === "function") {
+      return sea.isSea();
+    }
+  } catch {
+  }
+  return path.basename(process.execPath).toLowerCase() !== "node.exe";
+}
+
+function resolveNativeLauncherPath() {
+  const candidates = [
+    path.join(path.dirname(process.execPath), WINDOWS_LAUNCHER_RELATIVE_PATH),
+    path.join(__dirname, WINDOWS_LAUNCHER_RELATIVE_PATH),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
+function resolveAppEntryPath() {
+  if (isSeaExecutable()) {
+    return process.execPath;
+  }
+  return path.join(__dirname, "app.js");
+}
+
+function canUseNativeLauncher() {
+  return process.platform === "win32" && fs.existsSync(resolveNativeLauncherPath());
+}
+
+function argsToLauncherOptions(args) {
+  return {
+    previewState:
+      args.previewState === "running" || args.previewState === "setup" ? args.previewState : undefined,
+    layoutCheck: args.layoutCheck === true,
+    smokeTest: args.smokeTest === true,
+  };
+}
+
+async function startNativeLauncher(configPath, options = {}) {
+  const launcherPath = resolveNativeLauncherPath();
+  const childArgs = [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    launcherPath,
+    "-ConfigPath",
+    configPath,
+    "-NodePath",
+    process.execPath,
+    "-AppJsPath",
+    resolveAppEntryPath(),
+  ];
+
+  if (options.previewState) {
+    childArgs.push("-PreviewState", options.previewState);
+  }
+  if (options.layoutCheck) {
+    childArgs.push("-LayoutCheck");
+  }
+  if (options.smokeTest) {
+    childArgs.push("-SmokeTest");
+  }
+
+  await new Promise((resolve, reject) => {
+    const child = spawn("powershell", childArgs, {
+      stdio: "inherit",
+      windowsHide: false,
+    });
+
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`Native launcher exited with code ${code}`));
+    });
+  });
 }
 
 function resolveDefaultOpenCodeConfigPath() {
