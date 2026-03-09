@@ -1,0 +1,5 @@
+{
+  "main": "app.js",
+  "output": "dist/fabrix-bridge.blob",
+  "disableExperimentalSEAWarning": true
+}
