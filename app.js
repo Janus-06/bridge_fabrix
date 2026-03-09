@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
+const { spawn } = require("node:child_process");
 const { URL } = require("node:url");
 const { Readable } = require("node:stream");
 const readline = require("node:readline/promises");
@@ -18,8 +19,12 @@ const DEFAULT_UPSTREAM_MODEL_NAME = "/mnt/models";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 4000;
 const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_SETUP_HOST = "127.0.0.1";
 const MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_BODY_BYTES = 5 * 1024 * 1024;
+const FABRIX_PROVIDER_ID = "fabrix";
+const FABRIX_DEFAULT_MODEL_KEY = "default";
+const OPENCODE_CONFIG_SCHEMA = "https://opencode.ai/config.json";
 
 const HELP_TEXT = `
 ${APP_NAME}
@@ -28,15 +33,19 @@ Usage:
   node app.js
   node app.js run
   node app.js configure
+  node app.js setup-ui
   node app.js serve
   node app.js models
+  node app.js install-opencode
   node app.js config-path
   node app.js show-config
 
 Options:
   --config <path>       Use a custom config file path
   --start               Start server after configure
+  --cli                 Use CLI wizard instead of setup UI
   --refresh             Force refresh when listing models
+  --opencode <path>     Override OpenCode config path
   --json                Print JSON output when supported
 `;
 
@@ -58,10 +67,16 @@ async function main() {
       await showConfig(configPath, args.json === true);
       return;
     case "configure":
-      await configureCommand(configPath, args.start === true);
+      await configureCommand(configPath, args);
+      return;
+    case "setup-ui":
+      await setupUiCommand(configPath, args);
       return;
     case "models":
       await modelsCommand(configPath, args.refresh === true, args.json === true);
+      return;
+    case "install-opencode":
+      await installOpencodeCommand(configPath, args);
       return;
     case "serve":
       await serveCommand(configPath);
@@ -77,7 +92,10 @@ async function main() {
 }
 
 async function runCommand(configPath) {
-  const config = await ensureConfigured(configPath);
+  let config = loadConfig(configPath);
+  if (!isConfigComplete(config)) {
+    config = await startSetupApp(config, configPath, { startAfterSave: true });
+  }
   await startServer(config, configPath);
 }
 
@@ -89,10 +107,28 @@ async function serveCommand(configPath) {
   await startServer(config, configPath);
 }
 
-async function configureCommand(configPath, startAfterSave) {
+async function configureCommand(configPath, args) {
   const existing = loadConfig(configPath);
-  const config = await runSetupWizard(existing, configPath);
+  const startAfterSave = args.start === true;
+
+  if (args.cli === true) {
+    const config = await runSetupWizard(existing, configPath);
+    if (startAfterSave) {
+      await startServer(config, configPath);
+    }
+    return;
+  }
+
+  const config = await startSetupApp(existing, configPath, { startAfterSave });
   if (startAfterSave) {
+    await startServer(config, configPath);
+  }
+}
+
+async function setupUiCommand(configPath, args) {
+  const existing = loadConfig(configPath);
+  const config = await startSetupApp(existing, configPath, { startAfterSave: args.start === true });
+  if (args.start === true) {
     await startServer(config, configPath);
   }
 }
@@ -133,6 +169,21 @@ async function showConfig(configPath, asJson) {
 
   const sanitized = sanitizeConfig(config);
   console.log(JSON.stringify(sanitized, null, asJson ? 2 : 2));
+}
+
+async function installOpencodeCommand(configPath, args) {
+  const config = loadConfig(configPath);
+  if (!isConfigComplete(config)) {
+    throw new Error(`Config is missing or incomplete. Run "node app.js configure" first. Config path: ${configPath}`);
+  }
+
+  const result = installOpenCodeConfig(config, {
+    targetPath: args.opencode,
+    setDefaultModel: true,
+  });
+
+  console.log(`OpenCode config updated: ${result.path}`);
+  console.log(`Default OpenCode model: ${result.model}`);
 }
 
 async function ensureConfigured(configPath) {
@@ -263,6 +314,817 @@ async function promptForModelSelection(rl, models, currentAlias) {
   }
 }
 
+async function startSetupApp(existingConfig, configPath, options = {}) {
+  const initialConfig = mergeConfig(existingConfig);
+  const autoStart = options.startAfterSave === true;
+
+  return new Promise((resolve, reject) => {
+    let resolved = false;
+
+    const server = http.createServer(async (req, res) => {
+      try {
+        const requestUrl = new URL(req.url, "http://127.0.0.1");
+
+        if (req.method === "GET" && requestUrl.pathname === "/") {
+          return sendHtml(res, 200, renderSetupHtml());
+        }
+
+        if (req.method === "GET" && requestUrl.pathname === "/api/state") {
+          return sendJson(res, 200, {
+            config: buildSetupFormState(initialConfig),
+            opencodeConfigPath: resolveDefaultOpenCodeConfigPath(),
+            autoStart,
+            inputSummary: getInputSummary(),
+          });
+        }
+
+        if (req.method === "POST" && requestUrl.pathname === "/api/models") {
+          const payload = parseJsonBody(await readBody(req, MAX_BODY_BYTES));
+          const tempConfig = buildConfigFromSetupPayload(initialConfig, payload);
+          const tempState = { config: tempConfig, configPath };
+          const models = await fetchAndCacheModels(tempState);
+          return sendJson(res, 200, { models });
+        }
+
+        if (req.method === "POST" && requestUrl.pathname === "/api/save") {
+          const payload = parseJsonBody(await readBody(req, MAX_BODY_BYTES));
+          const config = buildConfigFromSetupPayload(initialConfig, payload);
+          const tempState = { config, configPath };
+          const models = await fetchAndCacheModels(tempState);
+          const selectedKey = String(payload.selectedModelKey || FABRIX_DEFAULT_MODEL_KEY).trim();
+          const selectedModel = resolveSelectedModel(models, selectedKey);
+
+          if (!selectedModel) {
+            const error = new Error("Select a model before saving.");
+            error.statusCode = 400;
+            error.type = "invalid_request_error";
+            throw error;
+          }
+
+          config.defaults = {
+            modelAlias: selectedModel.alias,
+            modelId: selectedModel.modelId,
+            modelGuid: selectedModel.modelGuid,
+            displayName: selectedModel.displayName,
+          };
+
+          config.integrations.opencode.configPath = resolveOpenCodeConfigPath(payload.opencode?.configPath);
+          config.integrations.opencode.enabled = payload.opencode?.install === true;
+          config.integrations.opencode.setDefaultModel = payload.opencode?.setDefaultModel !== false;
+
+          saveConfig(configPath, config);
+
+          let opencodeResult = null;
+          if (payload.opencode?.install === true) {
+            opencodeResult = installOpenCodeConfig(config, {
+              targetPath: payload.opencode?.configPath,
+              setDefaultModel: payload.opencode?.setDefaultModel !== false,
+            });
+          }
+
+          sendJson(res, 200, {
+            ok: true,
+            bridgeUrl: `http://${config.bridge.host}:${config.bridge.port}`,
+            configPath,
+            defaultModel: {
+              key: modelKeyFromAlias(selectedModel.alias),
+              alias: selectedModel.alias,
+              displayName: selectedModel.displayName,
+            },
+            opencode: opencodeResult,
+            startAfterSave: autoStart,
+          });
+
+          if (!resolved) {
+            resolved = true;
+            setTimeout(() => {
+              server.close(() => resolve(config));
+            }, 150);
+          }
+          return;
+        }
+
+        return sendJson(res, 404, {
+          error: {
+            message: "Not found",
+            type: "invalid_request_error",
+          },
+        });
+      } catch (error) {
+        handleUnhandledError(error, res);
+      }
+    });
+
+    server.once("error", reject);
+    server.listen(0, DEFAULT_SETUP_HOST, () => {
+      const address = server.address();
+      const setupUrl = `http://${DEFAULT_SETUP_HOST}:${address.port}`;
+      console.log(`${APP_NAME} setup UI: ${setupUrl}`);
+      openBrowser(setupUrl);
+    });
+  });
+}
+
+function buildSetupFormState(configInput) {
+  const config = mergeConfig(configInput);
+  return {
+    upstream: {
+      baseUrl: config.upstream.baseUrl,
+      chatPath: config.upstream.chatPath,
+      modelsPath: config.upstream.modelsPath,
+      client: config.upstream.client,
+      token: config.upstream.token,
+      requestModelName: config.upstream.requestModelName,
+      timeoutMs: config.upstream.timeoutMs,
+    },
+    bridge: {
+      host: config.bridge.host,
+      port: config.bridge.port,
+      token: config.bridge.token,
+      corsOrigin: config.bridge.corsOrigin,
+    },
+    defaults: {
+      selectedModelKey: config.defaults.modelAlias ? modelKeyFromAlias(config.defaults.modelAlias) : FABRIX_DEFAULT_MODEL_KEY,
+      displayName: config.defaults.displayName,
+    },
+    opencode: {
+      install: config.integrations.opencode.enabled,
+      configPath: config.integrations.opencode.configPath,
+      setDefaultModel: config.integrations.opencode.setDefaultModel,
+    },
+  };
+}
+
+function buildConfigFromSetupPayload(existingConfig, payload) {
+  const config = mergeConfig(existingConfig);
+
+  config.upstream.baseUrl = requireNonEmpty(payload.upstream?.baseUrl, "FabriX base URL");
+  config.upstream.chatPath = ensureLeadingSlash(requireNonEmpty(payload.upstream?.chatPath, "Chat completions path"));
+  config.upstream.modelsPath = ensureLeadingSlash(requireNonEmpty(payload.upstream?.modelsPath, "Models path"));
+  config.upstream.client = requireNonEmpty(payload.upstream?.client, "x-fabrix-client");
+  config.upstream.token = requireNonEmpty(payload.upstream?.token, "x-openapi-token");
+  config.upstream.requestModelName = requireNonEmpty(payload.upstream?.requestModelName, "Upstream request body model");
+  config.upstream.timeoutMs = parseInteger(payload.upstream?.timeoutMs, DEFAULT_TIMEOUT_MS);
+
+  config.bridge.host = requireNonEmpty(payload.bridge?.host, "Bridge host");
+  config.bridge.port = parseInteger(payload.bridge?.port, DEFAULT_PORT);
+  config.bridge.token = String(payload.bridge?.token || "");
+  config.bridge.corsOrigin = String(payload.bridge?.corsOrigin || "*");
+
+  config.integrations.opencode.configPath = resolveOpenCodeConfigPath(payload.opencode?.configPath);
+  config.integrations.opencode.enabled = payload.opencode?.install === true;
+  config.integrations.opencode.setDefaultModel = payload.opencode?.setDefaultModel !== false;
+
+  return config;
+}
+
+function resolveSelectedModel(models, selectedKey) {
+  const key = String(selectedKey || FABRIX_DEFAULT_MODEL_KEY).trim();
+  if (!key || key === FABRIX_DEFAULT_MODEL_KEY) {
+    return models[0] || null;
+  }
+
+  return models.find((model) => modelKeyFromAlias(model.alias) === key) || null;
+}
+
+function requireNonEmpty(value, label) {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    const error = new Error(`${label} is required.`);
+    error.statusCode = 400;
+    error.type = "invalid_request_error";
+    throw error;
+  }
+  return text;
+}
+
+function sendHtml(res, statusCode, html) {
+  if (res.writableEnded) return;
+  res.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
+function openBrowser(url) {
+  try {
+    if (process.platform === "win32") {
+      spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+      return;
+    }
+    if (process.platform === "darwin") {
+      spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+      return;
+    }
+    spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+  } catch {
+    console.log(`Open the setup URL manually: ${url}`);
+  }
+}
+
+function resolveDefaultOpenCodeConfigPath() {
+  return path.join(os.homedir(), ".config", "opencode", "opencode.json");
+}
+
+function resolveOpenCodeConfigPath(customPath) {
+  if (customPath && String(customPath).trim()) {
+    return path.resolve(String(customPath).trim());
+  }
+  return resolveDefaultOpenCodeConfigPath();
+}
+
+function installOpenCodeConfig(configInput, options = {}) {
+  const config = mergeConfig(configInput);
+  const targetPath = resolveOpenCodeConfigPath(options.targetPath || config.integrations.opencode.configPath);
+  const existing = loadJsonObjectOrDefault(targetPath, {
+    $schema: OPENCODE_CONFIG_SCHEMA,
+    provider: {},
+  });
+
+  if (!existing.$schema) {
+    existing.$schema = OPENCODE_CONFIG_SCHEMA;
+  }
+  if (!existing.provider || typeof existing.provider !== "object") {
+    existing.provider = {};
+  }
+
+  existing.provider[FABRIX_PROVIDER_ID] = {
+    npm: "@ai-sdk/openai-compatible",
+    name: "FabriX Bridge",
+    options: buildOpenCodeProviderOptions(config),
+    models: buildOpenCodeProviderModels(config),
+  };
+
+  if (options.setDefaultModel !== false) {
+    existing.model = `${FABRIX_PROVIDER_ID}/${FABRIX_DEFAULT_MODEL_KEY}`;
+    existing.small_model = `${FABRIX_PROVIDER_ID}/${FABRIX_DEFAULT_MODEL_KEY}`;
+  }
+
+  writeJsonFile(targetPath, existing);
+
+  return {
+    path: targetPath,
+    model: `${FABRIX_PROVIDER_ID}/${FABRIX_DEFAULT_MODEL_KEY}`,
+  };
+}
+
+function buildOpenCodeProviderOptions(config) {
+  const options = {
+    baseURL: `http://${config.bridge.host}:${config.bridge.port}/v1`,
+    timeout: Math.max(config.upstream.timeoutMs, 600000),
+  };
+
+  if (config.bridge.token) {
+    options.apiKey = config.bridge.token;
+  }
+
+  return options;
+}
+
+function buildOpenCodeProviderModels(config) {
+  const models = {
+    [FABRIX_DEFAULT_MODEL_KEY]: {
+      name: `FabriX Default (${config.defaults.displayName || "Configured model"})`,
+    },
+  };
+
+  for (const model of config.cache.models) {
+    const key = modelKeyFromAlias(model.alias);
+    models[key] = {
+      name: model.displayName,
+    };
+  }
+
+  return models;
+}
+
+function modelKeyFromAlias(alias) {
+  const text = String(alias || "");
+  const slashIndex = text.indexOf("/");
+  return slashIndex >= 0 ? text.slice(slashIndex + 1) : text;
+}
+
+function loadJsonObjectOrDefault(filePath, fallback) {
+  if (!fs.existsSync(filePath)) {
+    return JSON.parse(JSON.stringify(fallback));
+  }
+
+  const raw = fs.readFileSync(filePath, "utf8");
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : JSON.parse(JSON.stringify(fallback));
+  } catch {
+    const error = new Error(`Cannot update OpenCode config because it is not valid JSON: ${filePath}`);
+    error.statusCode = 400;
+    error.type = "invalid_request_error";
+    throw error;
+  }
+}
+
+function writeJsonFile(filePath, value) {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function getInputSummary() {
+  return {
+    required: [
+      "x-fabrix-client",
+      "x-openapi-token",
+      "Default model selection",
+    ],
+    optional: [
+      "Bridge token",
+      "OpenCode config path",
+      "FabriX base URL and advanced network settings",
+      "Host, port, CORS origin",
+    ],
+  };
+}
+
+function renderSetupHtml() {
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${APP_NAME} Setup</title>
+  <style>
+    :root {
+      --bg: #f6f1e8;
+      --panel: rgba(255,255,255,0.78);
+      --ink: #1e2220;
+      --muted: #5d665f;
+      --line: rgba(30,34,32,0.12);
+      --accent: #0f766e;
+      --accent-2: #164e63;
+      --danger: #b42318;
+      --shadow: 0 24px 60px rgba(39, 57, 51, 0.14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI Variable", "Noto Sans KR", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15,118,110,0.22), transparent 24rem),
+        radial-gradient(circle at bottom right, rgba(22,78,99,0.18), transparent 28rem),
+        linear-gradient(135deg, #f8f4ec 0%, #eef5f1 48%, #edf1f7 100%);
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 24px;
+    }
+    .card {
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      border: 1px solid rgba(255,255,255,0.56);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 28px;
+      position: sticky;
+      top: 24px;
+      height: fit-content;
+    }
+    .hero h1 {
+      margin: 0 0 14px;
+      font-size: 30px;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+    .hero p, .hero li, .status, .hint {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .hero ul {
+      margin: 18px 0 0;
+      padding-left: 18px;
+    }
+    .form {
+      padding: 28px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 16px;
+    }
+    .full { grid-column: 1 / -1; }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font: inherit;
+      background: rgba(255,255,255,0.84);
+      color: var(--ink);
+    }
+    input:focus, select:focus {
+      outline: 2px solid rgba(15,118,110,0.24);
+      border-color: rgba(15,118,110,0.4);
+    }
+    .section {
+      margin-top: 28px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+    }
+    .section h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .section p {
+      margin: 0 0 14px;
+      color: var(--muted);
+    }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .12s ease, opacity .12s ease, box-shadow .12s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button.primary {
+      color: white;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      box-shadow: 0 12px 28px rgba(15,118,110,0.24);
+    }
+    button.secondary {
+      background: rgba(255,255,255,0.86);
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    details {
+      margin-top: 8px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.56);
+      padding: 8px 16px 16px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 700;
+      padding: 10px 0;
+    }
+    .models {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .model {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.74);
+      padding: 14px;
+    }
+    .model strong { display: block; margin-bottom: 6px; }
+    .model small { color: var(--muted); display: block; margin-top: 6px; }
+    .inline {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .check {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 0;
+    }
+    .check input {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+    }
+    .status {
+      min-height: 24px;
+      margin-top: 14px;
+      white-space: pre-wrap;
+    }
+    .status.error { color: var(--danger); }
+    .banner {
+      background: rgba(15,118,110,0.1);
+      border: 1px solid rgba(15,118,110,0.18);
+      border-radius: 18px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+    }
+    @media (max-width: 920px) {
+      .shell { grid-template-columns: 1fr; }
+      .hero { position: static; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="card hero">
+      <div class="banner">초기 설정은 필수 입력 3개만 먼저 받습니다. 나머지는 고급 설정으로 접어두었습니다.</div>
+      <h1>FabriX Bridge Setup</h1>
+      <p>FabriX 토큰을 입력하고 모델을 선택하면 로컬 브릿지와 OpenCode 설정을 같이 준비할 수 있습니다.</p>
+      <ul>
+        <li>x-fabrix-client</li>
+        <li>x-openapi-token</li>
+        <li>기본 모델 선택</li>
+      </ul>
+      <div class="section">
+        <h2>OpenCode 자동 연결</h2>
+        <p>원하면 OpenCode 설정 파일에 <code>FabriX Bridge</code> provider를 자동 추가합니다.</p>
+      </div>
+    </aside>
+    <main class="card form">
+      <div class="grid">
+        <div class="full">
+          <h2 style="margin:0 0 8px;font-size:22px;letter-spacing:-0.02em;">필수 입력</h2>
+          <p class="hint" style="margin:0 0 16px;">모델 목록을 불러오려면 아래 두 값이 먼저 필요합니다.</p>
+        </div>
+        <div>
+          <label for="client">x-fabrix-client</label>
+          <input id="client" autocomplete="off" />
+        </div>
+        <div>
+          <label for="token">x-openapi-token</label>
+          <input id="token" type="password" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="inline" style="justify-content:space-between;">
+          <div>
+            <h2>모델 선택</h2>
+            <p>FabriX 모델 목록을 조회해서 기본 모델을 고릅니다.</p>
+          </div>
+          <button id="loadModels" class="secondary" type="button">모델 목록 불러오기</button>
+        </div>
+        <div id="models" class="models"></div>
+      </div>
+
+      <div class="section">
+        <h2>OpenCode 연동</h2>
+        <div class="check">
+          <input id="installOpencode" type="checkbox" />
+          <label for="installOpencode" style="margin:0;">OpenCode 설정 자동 추가</label>
+        </div>
+        <div class="grid">
+          <div class="full">
+            <label for="opencodePath">OpenCode config path</label>
+            <input id="opencodePath" />
+          </div>
+          <div class="full check">
+            <input id="setDefaultModel" type="checkbox" />
+            <label for="setDefaultModel" style="margin:0;">OpenCode 기본 모델도 FabriX로 변경</label>
+          </div>
+        </div>
+      </div>
+
+      <details class="section">
+        <summary>고급 설정</summary>
+        <div class="grid">
+          <div class="full">
+            <label for="baseUrl">FabriX base URL</label>
+            <input id="baseUrl" />
+          </div>
+          <div>
+            <label for="chatPath">Chat completions path</label>
+            <input id="chatPath" />
+          </div>
+          <div>
+            <label for="modelsPath">Models path</label>
+            <input id="modelsPath" />
+          </div>
+          <div>
+            <label for="requestModelName">Upstream request body model</label>
+            <input id="requestModelName" />
+          </div>
+          <div>
+            <label for="timeoutMs">Upstream timeout (ms)</label>
+            <input id="timeoutMs" type="number" />
+          </div>
+          <div>
+            <label for="host">Bridge host</label>
+            <input id="host" />
+          </div>
+          <div>
+            <label for="port">Bridge port</label>
+            <input id="port" type="number" />
+          </div>
+          <div>
+            <label for="bridgeToken">Bridge token</label>
+            <input id="bridgeToken" type="password" />
+          </div>
+          <div class="full">
+            <label for="corsOrigin">CORS origin</label>
+            <input id="corsOrigin" />
+          </div>
+        </div>
+      </details>
+
+      <div class="toolbar">
+        <button id="save" class="primary" type="button">저장${optionsLabelPlaceholder()}</button>
+      </div>
+      <div id="status" class="status"></div>
+    </main>
+  </div>
+  <script>
+    const els = {
+      client: document.getElementById("client"),
+      token: document.getElementById("token"),
+      baseUrl: document.getElementById("baseUrl"),
+      chatPath: document.getElementById("chatPath"),
+      modelsPath: document.getElementById("modelsPath"),
+      requestModelName: document.getElementById("requestModelName"),
+      timeoutMs: document.getElementById("timeoutMs"),
+      host: document.getElementById("host"),
+      port: document.getElementById("port"),
+      bridgeToken: document.getElementById("bridgeToken"),
+      corsOrigin: document.getElementById("corsOrigin"),
+      installOpencode: document.getElementById("installOpencode"),
+      opencodePath: document.getElementById("opencodePath"),
+      setDefaultModel: document.getElementById("setDefaultModel"),
+      models: document.getElementById("models"),
+      status: document.getElementById("status"),
+      loadModels: document.getElementById("loadModels"),
+      save: document.getElementById("save"),
+    };
+    let setupState = null;
+    let loadedModels = [];
+    let selectedModelKey = "default";
+
+    function setStatus(message, isError = false) {
+      els.status.textContent = message || "";
+      els.status.className = isError ? "status error" : "status";
+    }
+
+    function currentPayload() {
+      return {
+        upstream: {
+          baseUrl: els.baseUrl.value.trim(),
+          chatPath: els.chatPath.value.trim(),
+          modelsPath: els.modelsPath.value.trim(),
+          client: els.client.value.trim(),
+          token: els.token.value,
+          requestModelName: els.requestModelName.value.trim(),
+          timeoutMs: Number(els.timeoutMs.value || 0),
+        },
+        bridge: {
+          host: els.host.value.trim(),
+          port: Number(els.port.value || 0),
+          token: els.bridgeToken.value,
+          corsOrigin: els.corsOrigin.value.trim(),
+        },
+        opencode: {
+          install: els.installOpencode.checked,
+          configPath: els.opencodePath.value.trim(),
+          setDefaultModel: els.setDefaultModel.checked,
+        },
+        selectedModelKey,
+      };
+    }
+
+    function renderModels(models) {
+      loadedModels = models;
+      if (!Array.isArray(models) || models.length === 0) {
+        els.models.innerHTML = "<div class='hint'>조회된 모델이 없습니다.</div>";
+        return;
+      }
+
+      const current = loadedModels.find((model) => model.alias.endsWith("/" + selectedModelKey)) || loadedModels[0];
+      selectedModelKey = current ? current.alias.split("/")[1] : "default";
+
+      els.models.innerHTML = models.map((model) => {
+        const key = model.alias.split("/")[1];
+        const checked = key === selectedModelKey ? "checked" : "";
+        const desc = model.description ? model.description.replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+        return \`
+          <label class="model">
+            <input type="radio" name="model" value="\${key}" \${checked} style="margin-right:10px;" />
+            <strong>\${model.displayName}</strong>
+            <div class="hint">\${model.alias}</div>
+            <small>modelId: \${model.modelId}</small>
+            \${desc ? \`<small>\${desc}</small>\` : ""}
+          </label>
+        \`;
+      }).join("");
+
+      document.querySelectorAll('input[name="model"]').forEach((input) => {
+        input.addEventListener("change", () => {
+          selectedModelKey = input.value;
+        });
+      });
+    }
+
+    async function loadState() {
+      const response = await fetch("/api/state");
+      setupState = await response.json();
+      const config = setupState.config;
+
+      els.client.value = config.upstream.client || "";
+      els.token.value = config.upstream.token || "";
+      els.baseUrl.value = config.upstream.baseUrl || "";
+      els.chatPath.value = config.upstream.chatPath || "";
+      els.modelsPath.value = config.upstream.modelsPath || "";
+      els.requestModelName.value = config.upstream.requestModelName || "";
+      els.timeoutMs.value = config.upstream.timeoutMs || "";
+      els.host.value = config.bridge.host || "";
+      els.port.value = config.bridge.port || "";
+      els.bridgeToken.value = config.bridge.token || "";
+      els.corsOrigin.value = config.bridge.corsOrigin || "";
+      els.installOpencode.checked = config.opencode.install !== false;
+      els.opencodePath.value = config.opencode.configPath || setupState.opencodeConfigPath || "";
+      els.setDefaultModel.checked = config.opencode.setDefaultModel !== false;
+      selectedModelKey = config.defaults.selectedModelKey || "default";
+      els.save.textContent = setupState.autoStart ? "저장하고 브릿지 시작" : "저장";
+    }
+
+    async function loadModels() {
+      setStatus("FabriX 모델 목록을 조회하는 중입니다...");
+      const response = await fetch("/api/models", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(currentPayload())
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error?.message || "모델 조회에 실패했습니다.");
+      }
+      renderModels(data.models || []);
+      setStatus(\`모델 \${(data.models || []).length}개를 불러왔습니다.\`);
+    }
+
+    async function save() {
+      if (!loadedModels.length) {
+        await loadModels();
+      }
+      setStatus("설정을 저장하는 중입니다...");
+      const response = await fetch("/api/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(currentPayload())
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.error?.message || "설정 저장에 실패했습니다.");
+      }
+      const lines = [
+        "설정을 저장했습니다.",
+        \`기본 모델: \${data.defaultModel.displayName}\`,
+        \`브릿지 주소: \${data.bridgeUrl}\`,
+      ];
+      if (data.opencode?.path) {
+        lines.push(\`OpenCode config: \${data.opencode.path}\`);
+      }
+      if (data.startAfterSave) {
+        lines.push("브릿지를 시작합니다. 이 창은 닫아도 됩니다.");
+      }
+      setStatus(lines.join("\\n"));
+    }
+
+    els.loadModels.addEventListener("click", async () => {
+      try {
+        await loadModels();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    els.save.addEventListener("click", async () => {
+      try {
+        await save();
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+
+    loadState().catch((error) => setStatus(error.message, true));
+  </script>
+</body>
+</html>`;
+}
+
+function optionsLabelPlaceholder() {
+  return "";
+}
+
 async function startServer(configInput, configPath) {
   const config = mergeConfig(configInput);
   const state = { config, configPath };
@@ -343,7 +1205,7 @@ async function handleModelsRoute(res, state) {
     const models = await getModels(state, { forceRefresh: true, allowStale: true });
     return sendJson(res, 200, {
       object: "list",
-      data: models.map(toOpenAIModelObject),
+      data: [toDefaultOpenAIModelObject(state.config), ...models.map(toOpenAIModelObject)],
     });
   } catch (error) {
     return sendJson(res, 502, {
@@ -551,13 +1413,14 @@ function buildModelAlias(displayName, modelId) {
 
 function findMatchingModel(models, requestedModel, defaults) {
   const needle = String(requestedModel || "").trim();
-  if (!needle || needle === "default") {
+  if (!needle || needle === "default" || needle.toLowerCase() === `${FABRIX_PROVIDER_ID}/${FABRIX_DEFAULT_MODEL_KEY}`) {
     return models.find((model) => model.alias === defaults.modelAlias) || models[0] || null;
   }
 
   const lowered = needle.toLowerCase();
   return (
     models.find((model) => model.alias.toLowerCase() === lowered) ||
+    models.find((model) => modelKeyFromAlias(model.alias).toLowerCase() === lowered) ||
     models.find((model) => model.displayName.toLowerCase() === lowered) ||
     models.find((model) => String(model.modelId) === needle) ||
     models.find((model) => model.modelGuid.toLowerCase() === lowered) ||
@@ -577,6 +1440,19 @@ function toOpenAIModelObject(model) {
     model_id: model.modelId,
     model_guid: model.modelGuid,
     description: model.description,
+  };
+}
+
+function toDefaultOpenAIModelObject(config) {
+  return {
+    id: `${FABRIX_PROVIDER_ID}/${FABRIX_DEFAULT_MODEL_KEY}`,
+    object: "model",
+    created: 0,
+    owned_by: "fabrix",
+    display_name: `FabriX Default (${config.defaults.displayName || "configured"})`,
+    model_id: config.defaults.modelId || null,
+    model_guid: config.defaults.modelGuid || null,
+    description: "Currently selected default model for the local FabriX bridge.",
   };
 }
 
@@ -761,6 +1637,13 @@ function mergeConfig(config) {
       models: [],
       fetchedAt: "",
     },
+    integrations: {
+      opencode: {
+        enabled: true,
+        configPath: resolveDefaultOpenCodeConfigPath(),
+        setDefaultModel: true,
+      },
+    },
   };
 
   if (!config || typeof config !== "object") {
@@ -779,6 +1662,11 @@ function mergeConfig(config) {
   if (config.cache && typeof config.cache === "object") {
     Object.assign(merged.cache, config.cache);
   }
+  if (config.integrations && typeof config.integrations === "object") {
+    if (config.integrations.opencode && typeof config.integrations.opencode === "object") {
+      Object.assign(merged.integrations.opencode, config.integrations.opencode);
+    }
+  }
 
   merged.upstream.baseUrl = trimTrailingSlash(String(merged.upstream.baseUrl || DEFAULT_BASE_URL));
   merged.upstream.chatPath = ensureLeadingSlash(String(merged.upstream.chatPath || DEFAULT_CHAT_PATH));
@@ -793,6 +1681,9 @@ function mergeConfig(config) {
   merged.defaults.modelId = parseInteger(merged.defaults.modelId, 0);
   merged.defaults.modelGuid = String(merged.defaults.modelGuid || "");
   merged.defaults.displayName = String(merged.defaults.displayName || "");
+  merged.integrations.opencode.enabled = merged.integrations.opencode.enabled !== false;
+  merged.integrations.opencode.configPath = resolveOpenCodeConfigPath(merged.integrations.opencode.configPath);
+  merged.integrations.opencode.setDefaultModel = merged.integrations.opencode.setDefaultModel !== false;
 
   if (!Array.isArray(merged.cache.models)) {
     merged.cache.models = [];

@@ -1,6 +1,6 @@
 {
   "name": "sds-fabrix-bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone OpenAI-compatible bridge for FabriX serving API",
   "private": true,
   "main": "app.js",
@@ -8,8 +8,10 @@
   "scripts": {
     "start": "node app.js",
     "configure": "node app.js configure",
+    "setup-ui": "node app.js setup-ui",
     "serve": "node app.js serve",
     "models": "node app.js models",
+    "install-opencode": "node app.js install-opencode",
     "probe": "node serving-api-probe.js",
     "build:sea": "powershell -ExecutionPolicy Bypass -File scripts/build-sea.ps1"
   },

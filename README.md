@@ -22,6 +22,12 @@ First-time setup:
 node app.js configure
 ```
 
+Browser-based setup only:
+
+```powershell
+node app.js setup-ui
+```
+
 Start the bridge:
 
 ```powershell
@@ -32,6 +38,12 @@ List available models:
 
 ```powershell
 node app.js models
+```
+
+Install or refresh OpenCode config:
+
+```powershell
+node app.js install-opencode
 ```
 
 Show the active config path:
@@ -45,8 +57,24 @@ node app.js config-path
 1. Enter `x-fabrix-client` and `x-openapi-token`
 2. Query FabriX model list from `/v1/models`
 3. Select a default model
-4. Start the local bridge
-5. Connect any OpenAI-compatible client to `http://127.0.0.1:4000`
+4. Optionally install OpenCode config automatically
+5. Start the local bridge
+6. Connect any OpenAI-compatible client to `http://127.0.0.1:4000`
+
+## Minimal inputs
+
+Required:
+
+- `x-fabrix-client`
+- `x-openapi-token`
+- Default model selection
+
+Optional:
+
+- Bridge token
+- OpenCode config path
+- FabriX base URL, paths, timeout
+- Bridge host, port, CORS origin
 
 ## Local API
 
@@ -59,6 +87,14 @@ If a local bridge token is configured, call the bridge with:
 ```text
 Authorization: Bearer <bridge-token>
 ```
+
+The bridge also exposes a stable default model id:
+
+```text
+fabrix/default
+```
+
+That id is useful for OpenCode integration because the bridge can keep the actual upstream model selection internally.
 
 ## Config file
 
@@ -133,3 +169,24 @@ Use the included probe script to inspect upstream responses directly:
 node serving-api-probe.js --model-id 16 --client "<FABRIX_CLIENT>" --token "<FABRIX_OPENAPI_TOKEN>"
 node serving-api-probe.js --stream --model-id 16 --client "<FABRIX_CLIENT>" --token "<FABRIX_OPENAPI_TOKEN>"
 ```
+
+## OpenCode integration
+
+The setup flow can update OpenCode config automatically.
+
+Default OpenCode config path on Windows:
+
+```text
+%USERPROFILE%\.config\opencode\opencode.json
+```
+
+Installed provider id:
+
+```text
+fabrix
+```
+
+Installed model ids:
+
+- `fabrix/default`
+- one entry for each fetched FabriX model
