@@ -1,0 +1,41 @@
+name: Release Windows EXE
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build SEA executable
+        run: npm run build:sea
+
+      - name: Package release zip
+        shell: powershell
+        run: |
+          Compress-Archive -Path dist/fabrix-bridge.exe,README.md -DestinationPath dist/fabrix-bridge-windows-x64.zip -Force
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/fabrix-bridge-windows-x64.zip
+            dist/fabrix-bridge.exe

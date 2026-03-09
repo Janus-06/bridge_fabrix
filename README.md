@@ -111,6 +111,20 @@ That artifact contains:
 - `dist/fabrix-bridge.exe`
 - `README.md`
 
+## GitHub release build
+
+Tagging the repository with `v*` creates a GitHub Release and uploads:
+
+- `fabrix-bridge-windows-x64.zip`
+- `fabrix-bridge.exe`
+
+Example:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ## Probe script
 
 Use the included probe script to inspect upstream responses directly:
