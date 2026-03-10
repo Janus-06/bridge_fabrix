@@ -14,6 +14,7 @@
     "models": "node app.js models",
     "install-opencode": "node app.js install-opencode",
     "probe": "node serving-api-probe.js",
+    "stub:selftest": "node scripts/fabrix-selftest-stub.js",
     "build:sea": "powershell -ExecutionPolicy Bypass -File scripts/build-sea.ps1"
   },
   "devDependencies": {

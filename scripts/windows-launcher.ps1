@@ -22,9 +22,9 @@ $xamlSource = @'
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="FabriX Bridge Launcher"
         Width="900"
-        Height="620"
+        Height="720"
         MinWidth="840"
-        MinHeight="580"
+        MinHeight="680"
         WindowStartupLocation="CenterScreen"
         Background="#EEF1F3"
         FontFamily="Segoe UI">
@@ -262,46 +262,61 @@ $xamlSource = @'
                 </Border>
 
                 <Expander Header="고급 설정" IsExpanded="False">
-                  <Border Background="{StaticResource SurfaceAltBrush}" Padding="14">
-                    <UniformGrid Columns="2" Rows="5">
-                      <StackPanel Margin="0,0,10,10">
-                        <TextBlock Text="FabriX base URL" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="BaseUrlTextBox" />
+                  <StackPanel>
+                    <Border Background="{StaticResource SurfaceAltBrush}" Padding="14" Margin="0,0,0,12">
+                      <UniformGrid Columns="2" Rows="5">
+                        <StackPanel Margin="0,0,10,10">
+                          <TextBlock Text="FabriX base URL" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="BaseUrlTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="10,0,0,10">
+                          <TextBlock Text="Chat path" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="ChatPathTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="0,0,10,10">
+                          <TextBlock Text="Models path" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="ModelsPathTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="10,0,0,10">
+                          <TextBlock Text="Request body model" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="RequestModelTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="0,0,10,10">
+                          <TextBlock Text="Timeout (ms)" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="TimeoutTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="10,0,0,10">
+                          <TextBlock Text="Bridge host" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="BridgeHostTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="0,0,10,0">
+                          <TextBlock Text="Bridge port" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="BridgePortTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="10,0,0,0">
+                          <TextBlock Text="CORS origin" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="CorsOriginTextBox" />
+                        </StackPanel>
+                        <StackPanel Margin="0,10,10,0">
+                          <TextBlock Text="Bridge token" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="BridgeTokenTextBox" />
+                        </StackPanel>
+                      </UniformGrid>
+                    </Border>
+
+                    <Border Background="{StaticResource SurfaceAltBrush}" Padding="14">
+                      <StackPanel>
+                        <TextBlock Text="OpenCode 연동" FontWeight="Bold" FontSize="16" />
+                        <TextBlock Text="원하면 브리지 시작과 함께 OpenCode 설정도 자동으로 갱신합니다." Margin="0,4,0,0" FontSize="12" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" />
+                        <CheckBox x:Name="InstallOpenCodeCheckBox" Margin="0,12,0,0" IsChecked="True" Content="브리지 시작 시 OpenCode config 자동 적용" />
+                        <StackPanel Margin="0,10,0,0">
+                          <TextBlock Text="OpenCode config path" FontWeight="Bold" FontSize="13" />
+                          <TextBox x:Name="OpenCodePathTextBox" />
+                        </StackPanel>
+                        <CheckBox x:Name="SetDefaultModelCheckBox" Margin="0,10,0,0" IsChecked="True" Content="OpenCode 기본 모델도 FabriX로 변경" />
                       </StackPanel>
-                      <StackPanel Margin="10,0,0,10">
-                        <TextBlock Text="Chat path" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="ChatPathTextBox" />
-                      </StackPanel>
-                      <StackPanel Margin="0,0,10,10">
-                        <TextBlock Text="Models path" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="ModelsPathTextBox" />
-                      </StackPanel>
-                      <StackPanel Margin="10,0,0,10">
-                        <TextBlock Text="Request body model" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="RequestModelTextBox" />
-                      </StackPanel>
-                      <StackPanel Margin="0,0,10,10">
-                        <TextBlock Text="Timeout (ms)" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="TimeoutTextBox" />
-                      </StackPanel>
-                      <StackPanel Margin="10,0,0,10">
-                        <TextBlock Text="Bridge host" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="BridgeHostTextBox" />
-                      </StackPanel>
-                      <StackPanel Margin="0,0,10,0">
-                        <TextBlock Text="Bridge port" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="BridgePortTextBox" />
-                      </StackPanel>
-                      <StackPanel Margin="10,0,0,0">
-                        <TextBlock Text="CORS origin" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="CorsOriginTextBox" />
-                      </StackPanel>
-                      <StackPanel Margin="0,10,10,0">
-                        <TextBlock Text="Bridge token" FontWeight="Bold" FontSize="13" />
-                        <TextBox x:Name="BridgeTokenTextBox" />
-                      </StackPanel>
-                    </UniformGrid>
-                  </Border>
+                    </Border>
+                  </StackPanel>
                 </Expander>
 
                 <Grid Margin="0,2,0,6">
@@ -384,6 +399,7 @@ $xamlSource = @'
                           <RowDefinition Height="Auto" />
                           <RowDefinition Height="Auto" />
                           <RowDefinition Height="Auto" />
+                          <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="76" />
@@ -401,6 +417,9 @@ $xamlSource = @'
 
                         <TextBlock Text="토큰" Grid.Row="3" Grid.Column="0" Margin="0,10,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                         <TextBlock x:Name="SummaryBridgeTokenText" Grid.Row="3" Grid.Column="1" Margin="0,10,0,0" FontSize="12" FontFamily="Consolas" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+
+                        <TextBlock Text="OpenCode" Grid.Row="4" Grid.Column="0" Margin="0,10,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                        <TextBlock x:Name="SummaryOpenCodeText" Grid.Row="4" Grid.Column="1" Margin="0,10,0,0" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" />
                       </Grid>
                     </StackPanel>
 
@@ -411,13 +430,15 @@ $xamlSource = @'
                         <Grid.ColumnDefinitions>
                           <ColumnDefinition Width="*" />
                           <ColumnDefinition Width="Auto" />
+                          <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
                         <StackPanel>
                           <TextBlock Text="OpenCode 참고" FontSize="17" FontWeight="Bold" />
                         </StackPanel>
 
-                        <Button x:Name="CopyButton" Grid.Column="1" Content="OpenCode 복사" Width="118" Height="38" Style="{StaticResource SecondaryButtonStyle}" />
+                        <Button x:Name="InstallOpenCodeButton" Grid.Column="1" Content="OpenCode 적용" Width="126" Height="38" Style="{StaticResource SecondaryButtonStyle}" />
+                        <Button x:Name="CopyButton" Grid.Column="2" Margin="8,0,0,0" Content="설정 복사" Width="102" Height="38" Style="{StaticResource SecondaryButtonStyle}" />
                       </Grid>
 
                       <TextBox x:Name="SnippetTextBox" Height="118" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="12" Background="{StaticResource SurfaceAltBrush}" Foreground="{StaticResource TextBrush}" BorderBrush="{StaticResource LineBrush}" BorderThickness="1" />
@@ -468,6 +489,9 @@ $controlNames = @(
   "BridgePortTextBox",
   "CorsOriginTextBox",
   "BridgeTokenTextBox",
+  "InstallOpenCodeCheckBox",
+  "OpenCodePathTextBox",
+  "SetDefaultModelCheckBox",
   "LoadModelsButton",
   "ModelHintCard",
   "LoadingCard",
@@ -483,7 +507,9 @@ $controlNames = @(
   "SummaryModelsPathText",
   "SummaryBridgeText",
   "SummaryBridgeTokenText",
+  "SummaryOpenCodeText",
   "SnippetTextBox",
+  "InstallOpenCodeButton",
   "CopyButton",
   "ReopenButton",
   "ShutdownButton",
@@ -523,6 +549,9 @@ $defaults = @{
   BridgePort = "4000"
   CorsOrigin = "*"
   BridgeToken = ""
+  OpenCodeInstall = $true
+  OpenCodeConfigPath = Join-Path $HOME ".config\opencode\opencode.json"
+  OpenCodeSetDefaultModel = $true
 }
 
 $sampleModels = @(
@@ -654,7 +683,10 @@ function Build-CacheModels($models) {
   return $cache
 }
 
-function Resolve-OpenCodeConfigPath {
+function Resolve-OpenCodeConfigPath([string]$customPath = "") {
+  if ($customPath -and $customPath.Trim()) {
+    return [System.IO.Path]::GetFullPath($customPath.Trim())
+  }
   return Join-Path $HOME ".config\opencode\opencode.json"
 }
 
@@ -734,9 +766,9 @@ function Build-ConfigObject($models) {
     }
     integrations = [ordered]@{
       opencode = [ordered]@{
-        enabled = $true
-        configPath = Resolve-OpenCodeConfigPath
-        setDefaultModel = $true
+        enabled = [bool]$current.OpenCodeInstall
+        configPath = $current.OpenCodeConfigPath
+        setDefaultModel = [bool]$current.OpenCodeSetDefaultModel
       }
     }
   }
@@ -792,6 +824,9 @@ function Set-Defaults {
   $controls.BridgePortTextBox.Text = $defaults.BridgePort
   $controls.CorsOriginTextBox.Text = $defaults.CorsOrigin
   $controls.BridgeTokenTextBox.Text = $defaults.BridgeToken
+  $controls.InstallOpenCodeCheckBox.IsChecked = $defaults.OpenCodeInstall
+  $controls.OpenCodePathTextBox.Text = $defaults.OpenCodeConfigPath
+  $controls.SetDefaultModelCheckBox.IsChecked = $defaults.OpenCodeSetDefaultModel
   Sync-HeaderPills
 }
 
@@ -853,6 +888,9 @@ function Get-CurrentConfig {
     BridgePort = Parse-Integer $controls.BridgePortTextBox.Text.Trim() 4000
     CorsOrigin = $controls.CorsOriginTextBox.Text.Trim()
     BridgeToken = $controls.BridgeTokenTextBox.Text.Trim()
+    OpenCodeInstall = $controls.InstallOpenCodeCheckBox.IsChecked -eq $true
+    OpenCodeConfigPath = Resolve-OpenCodeConfigPath $controls.OpenCodePathTextBox.Text.Trim()
+    OpenCodeSetDefaultModel = $controls.SetDefaultModelCheckBox.IsChecked -eq $true
     SelectedModelId = $state.SelectedModelId
   }
 }
@@ -873,6 +911,13 @@ function Set-CurrentConfig($config) {
   $controls.BridgePortTextBox.Text = [string]$config.bridge.port
   $controls.CorsOriginTextBox.Text = [string]$config.bridge.corsOrigin
   $controls.BridgeTokenTextBox.Text = [string]$config.bridge.token
+  $openCodeConfig = $null
+  if ($config.integrations -and $config.integrations.opencode) {
+    $openCodeConfig = $config.integrations.opencode
+  }
+  $controls.InstallOpenCodeCheckBox.IsChecked = if ($openCodeConfig -and $openCodeConfig.enabled -eq $false) { $false } else { $true }
+  $controls.OpenCodePathTextBox.Text = Resolve-OpenCodeConfigPath ([string]$openCodeConfig.configPath)
+  $controls.SetDefaultModelCheckBox.IsChecked = if ($openCodeConfig -and $openCodeConfig.setDefaultModel -eq $false) { $false } else { $true }
   $state.SelectedModelId = [int]$config.defaults.modelId
   Sync-HeaderPills
 }
@@ -946,34 +991,54 @@ function Render-Models {
   }
 }
 
-function Build-OpenCodeSnippet([string]$localBaseUrl, [string]$bridgeToken) {
-  $apiKeyLine = ""
-  if ($bridgeToken) {
-    $apiKeyLine = '        "apiKey": "{env:FABRIX_BRIDGE_TOKEN}",' + [Environment]::NewLine
+function Get-ModelKey([string]$alias) {
+  $text = [string]$alias
+  $slashIndex = $text.IndexOf("/")
+  if ($slashIndex -ge 0) {
+    return $text.Substring($slashIndex + 1)
+  }
+  return $text
+}
+
+function Build-OpenCodeSnippet($config, $models) {
+  $selected = @($models) | Where-Object { $_.modelId -eq $config.SelectedModelId } | Select-Object -First 1
+  $providerModels = [ordered]@{
+    default = [ordered]@{
+      name = if ($selected -and $selected.displayName) { "FabriX Default ($($selected.displayName))" } else { "FabriX Default" }
+    }
+  }
+  foreach ($model in @($models)) {
+    $providerModels[(Get-ModelKey $model.alias)] = [ordered]@{
+      name = $model.displayName
+    }
   }
 
-  return @"
-{
-  "`$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "fabrix": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "FabriX Bridge",
-      "options": {
-        "baseURL": "$localBaseUrl",
-$apiKeyLine        "timeout": 600000
-      },
-      "models": {
-        "default": {
-          "name": "FabriX Bridge (Default)"
-        }
+  $providerOptions = [ordered]@{
+    baseURL = "http://{0}:{1}/v1" -f $config.BridgeHost, $config.BridgePort
+    timeout = [Math]::Max([int]$config.Timeout, 600000)
+  }
+  if ($config.BridgeToken) {
+    $providerOptions.apiKey = "{env:FABRIX_BRIDGE_TOKEN}"
+  }
+
+  $snippet = [ordered]@{
+    '$schema' = "https://opencode.ai/config.json"
+    provider = [ordered]@{
+      fabrix = [ordered]@{
+        npm = "@ai-sdk/openai-compatible"
+        name = "FabriX Bridge"
+        options = $providerOptions
+        models = $providerModels
       }
     }
-  },
-  "model": "fabrix/default",
-  "small_model": "fabrix/default"
-}
-"@
+  }
+
+  if ($config.OpenCodeSetDefaultModel) {
+    $snippet.model = "fabrix/default"
+    $snippet.small_model = "fabrix/default"
+  }
+
+  return ($snippet | ConvertTo-Json -Depth 100)
 }
 
 function Update-RunningView($config) {
@@ -984,12 +1049,13 @@ function Update-RunningView($config) {
 
   $localBaseUrl = "http://{0}:{1}/v1" -f $config.BridgeHost, $config.BridgePort
   $controls.RunningBaseUrlText.Text = $localBaseUrl
-  $controls.RunningModelText.Text = $selected.displayName
-  $controls.SummaryBaseUrlText.Text = "{0}{1}" -f $config.BaseUrl, $config.ChatPath
+  $controls.RunningModelText.Text = if ($selected) { $selected.displayName } else { "선택된 모델 없음" }
+  $controls.SummaryBaseUrlText.Text = Join-Url $config.BaseUrl $config.ChatPath
   $controls.SummaryModelsPathText.Text = $config.ModelsPath
   $controls.SummaryBridgeText.Text = "{0}:{1}" -f $config.BridgeHost, $config.BridgePort
   $controls.SummaryBridgeTokenText.Text = if ($config.BridgeToken) { "설정됨" } else { "미사용" }
-  $controls.SnippetTextBox.Text = Build-OpenCodeSnippet $localBaseUrl $config.BridgeToken
+  $controls.SummaryOpenCodeText.Text = if ($config.OpenCodeInstall) { $config.OpenCodeConfigPath } else { "자동 적용 꺼짐" }
+  $controls.SnippetTextBox.Text = Build-OpenCodeSnippet $config $script:modelCatalog
 }
 
 function Load-ModelsIntoState($models) {
@@ -1228,8 +1294,61 @@ function Start-BridgeServer($config) {
   $state.ServerProcess = $process
 
   if (-not (Wait-BridgeReady $config)) {
+    Stop-BridgeServer
     throw "브리지 서버가 제시간에 시작되지 않았습니다."
   }
+}
+
+function Invoke-AppCommand([string[]]$arguments) {
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.UseShellExecute = $false
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $startInfo.CreateNoWindow = $true
+  $startInfo.WorkingDirectory = Split-Path -Parent $AppJsPath
+  $quotedArguments = @($arguments) | ForEach-Object { Quote-Argument $_ }
+  $useExecutableEntry = $AppJsPath -and $AppJsPath.ToLowerInvariant().EndsWith(".exe")
+
+  if ($useExecutableEntry) {
+    $startInfo.FileName = $AppJsPath
+    $startInfo.Arguments = $quotedArguments -join " "
+  }
+  else {
+    $startInfo.FileName = $NodePath
+    $startInfo.Arguments = (@((Quote-Argument $AppJsPath)) + $quotedArguments) -join " "
+  }
+
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  $null = $process.Start()
+  $stdout = $process.StandardOutput.ReadToEnd()
+  $stderr = $process.StandardError.ReadToEnd()
+  $process.WaitForExit()
+
+  if ($process.ExitCode -ne 0) {
+    $message = if ($stderr.Trim()) { $stderr.Trim() } elseif ($stdout.Trim()) { $stdout.Trim() } else { "명령 실행에 실패했습니다." }
+    throw $message
+  }
+
+  return [ordered]@{
+    StdOut = $stdout.Trim()
+    StdErr = $stderr.Trim()
+  }
+}
+
+function Install-OpenCodeConfig($config) {
+  $arguments = @(
+    "install-opencode",
+    "--config",
+    $ConfigPath,
+    "--opencode",
+    $config.OpenCodeConfigPath
+  )
+  if (-not $config.OpenCodeSetDefaultModel) {
+    $arguments += "--keep-default-model"
+  }
+
+  return Invoke-AppCommand $arguments
 }
 
 function Copy-SnippetToClipboard {
@@ -1247,6 +1366,8 @@ function Invoke-SelfTest {
     throw "SelfTestBaseUrl 값이 필요합니다."
   }
 
+  $selfTestOpenCodePath = Join-Path ([System.IO.Path]::GetTempPath()) "sds-fabrix-bridge-selftest\opencode.json"
+
   Reset-Form
   $controls.BaseUrlTextBox.Text = $SelfTestBaseUrl
   $controls.ChatPathTextBox.Text = "/chat/completions"
@@ -1255,6 +1376,9 @@ function Invoke-SelfTest {
   $controls.FabrixTokenTextBox.Password = $SelfTestToken
   $controls.BridgeHostTextBox.Text = "127.0.0.1"
   $controls.BridgePortTextBox.Text = "4011"
+  $controls.InstallOpenCodeCheckBox.IsChecked = $true
+  $controls.OpenCodePathTextBox.Text = $selfTestOpenCodePath
+  $controls.SetDefaultModelCheckBox.IsChecked = $true
   Sync-HeaderPills
 
   Load-FabriXModels
@@ -1268,6 +1392,12 @@ function Invoke-SelfTest {
   Start-BridgeServer $config
 
   try {
+    Install-OpenCodeConfig $config | Out-Null
+    $installed = Get-Content -Raw -Path $selfTestOpenCodePath | ConvertFrom-Json
+    if (-not $installed.provider.fabrix) {
+      throw "OpenCode config에 fabrix provider가 기록되지 않았습니다."
+    }
+
     $modelsResponse = Invoke-RestMethod -Uri "http://127.0.0.1:4011/v1/models" -Method Get -TimeoutSec 4
     if (-not $modelsResponse.data -or $modelsResponse.data.Count -lt 1) {
       throw "브리지 /v1/models 응답이 비어 있습니다."
@@ -1343,7 +1473,17 @@ $controls.StartButton.Add_Click({
     Start-BridgeServer $config
     Update-RunningView $config
     Set-SavedBadge $true
-    Show-RunningState "브리지 서버가 실행 중입니다."
+    $message = "브리지 서버가 실행 중입니다."
+    if ($config.OpenCodeInstall) {
+      try {
+        Install-OpenCodeConfig $config | Out-Null
+        $message = "브리지와 OpenCode 설정을 함께 적용했습니다."
+      }
+      catch {
+        $message = "브리지는 시작됐지만 OpenCode 적용은 실패했습니다."
+      }
+    }
+    Show-RunningState $message
   }
   catch {
     Set-Toast "SetupToastText" $_.Exception.Message
@@ -1356,12 +1496,23 @@ $controls.ReopenButton.Add_Click({
 
 $controls.ShutdownButton.Add_Click({
   Stop-BridgeServer
-  $controls.WindowStatusText.Text = "설정 대기"
-  Set-Toast "RunningToastText" "브리지 서버를 종료했습니다."
+  Show-SetupState "브리지 서버를 종료했습니다."
 })
 
 $controls.CopyButton.Add_Click({
   Copy-SnippetToClipboard
+})
+
+$controls.InstallOpenCodeButton.Add_Click({
+  $config = Get-CurrentConfig
+  try {
+    Install-OpenCodeConfig $config | Out-Null
+    Update-RunningView $config
+    Set-Toast "RunningToastText" "OpenCode config를 적용했습니다."
+  }
+  catch {
+    Set-Toast "RunningToastText" $_.Exception.Message
+  }
 })
 
 if ($LayoutCheck) {

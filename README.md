@@ -22,6 +22,8 @@ First-time setup:
 node app.js configure
 ```
 
+On Windows, `configure` opens the native launcher app by default.
+
 Browser-based setup only:
 
 ```powershell
@@ -46,6 +48,12 @@ Install or refresh OpenCode config:
 node app.js install-opencode
 ```
 
+Keep the current OpenCode default model and only add the provider entry:
+
+```powershell
+node app.js install-opencode --keep-default-model
+```
+
 Show the active config path:
 
 ```powershell
@@ -57,7 +65,7 @@ node app.js config-path
 1. Enter `x-fabrix-client` and `x-openapi-token`
 2. Query FabriX model list from `/v1/models`
 3. Select a default model
-4. Optionally install OpenCode config automatically
+4. Optionally install OpenCode config automatically from the setup app
 5. Start the local bridge
 6. Connect any OpenAI-compatible client to `http://127.0.0.1:4000`
 

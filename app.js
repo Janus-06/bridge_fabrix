@@ -28,21 +28,22 @@ const FABRIX_DEFAULT_MODEL_KEY = "default";
 const OPENCODE_CONFIG_SCHEMA = "https://opencode.ai/config.json";
 const WINDOWS_LAUNCHER_RELATIVE_PATH = path.join("scripts", "windows-launcher.ps1");
 const WINDOWS_LAUNCHER_ASSET_KEY = "windows-launcher.ps1";
+const INVOCATION_NAME = resolveInvocationName();
 
 const HELP_TEXT = `
 ${APP_NAME}
 
 Usage:
-  node app.js
-  node app.js run
-  node app.js launcher
-  node app.js configure
-  node app.js setup-ui
-  node app.js serve
-  node app.js models
-  node app.js install-opencode
-  node app.js config-path
-  node app.js show-config
+  ${INVOCATION_NAME}
+  ${INVOCATION_NAME} run
+  ${INVOCATION_NAME} launcher
+  ${INVOCATION_NAME} configure
+  ${INVOCATION_NAME} setup-ui
+  ${INVOCATION_NAME} serve
+  ${INVOCATION_NAME} models
+  ${INVOCATION_NAME} install-opencode
+  ${INVOCATION_NAME} config-path
+  ${INVOCATION_NAME} show-config
 
 Options:
   --config <path>       Use a custom config file path
@@ -50,6 +51,7 @@ Options:
   --cli                 Use CLI wizard instead of setup UI
   --refresh             Force refresh when listing models
   --opencode <path>     Override OpenCode config path
+  --keep-default-model  Keep the current OpenCode default model
   --json                Print JSON output when supported
   --preview-state <v>   Native launcher preview state (setup|running)
   --layout-check        Run native launcher layout validation
@@ -205,13 +207,18 @@ async function installOpencodeCommand(configPath, args) {
     throw new Error(`Config is missing or incomplete. Run "node app.js configure" first. Config path: ${configPath}`);
   }
 
+  const setDefaultModel = args.keepDefaultModel !== true;
   const result = installOpenCodeConfig(config, {
     targetPath: args.opencode,
-    setDefaultModel: true,
+    setDefaultModel,
   });
 
   console.log(`OpenCode config updated: ${result.path}`);
-  console.log(`Default OpenCode model: ${result.model}`);
+  if (result.setDefaultModel) {
+    console.log(`Default OpenCode model: ${result.model}`);
+  } else {
+    console.log("OpenCode default model unchanged");
+  }
 }
 
 async function ensureConfigured(configPath) {
@@ -715,6 +722,7 @@ function installOpenCodeConfig(configInput, options = {}) {
   return {
     path: targetPath,
     model: `${FABRIX_PROVIDER_ID}/${FABRIX_DEFAULT_MODEL_KEY}`,
+    setDefaultModel: options.setDefaultModel !== false,
   };
 }
 
@@ -1856,6 +1864,19 @@ function isConfigComplete(config) {
       merged.bridge.host &&
       merged.bridge.port
   );
+}
+
+function resolveInvocationName() {
+  const candidates = [process.argv[0], process.execPath].map((value) => path.basename(String(value || "")));
+  if (process.platform === "win32") {
+    for (const executableName of candidates) {
+      const lowered = executableName.toLowerCase();
+      if (executableName && lowered !== "node.exe" && lowered !== "node") {
+        return executableName;
+      }
+    }
+  }
+  return "node app.js";
 }
 
 async function promptValue(rl, label, defaultValue, options = {}) {
