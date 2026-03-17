@@ -705,6 +705,63 @@ function Parse-Integer([string]$value, [int]$fallback) {
   return $fallback
 }
 
+function Resolve-ExceptionMessage($errorOrException) {
+  $exception = $errorOrException
+  if ($errorOrException -is [System.Management.Automation.ErrorRecord]) {
+    $exception = $errorOrException.Exception
+  }
+
+  $messages = @()
+  while ($exception) {
+    $message = [string]$exception.Message
+    if ($message -and $messages -notcontains $message) {
+      $messages += $message
+    }
+
+    $webException = $exception -as [System.Net.WebException]
+    if ($webException -and $webException.Response) {
+      try {
+        $stream = $webException.Response.GetResponseStream()
+        if ($stream) {
+          $reader = New-Object System.IO.StreamReader($stream)
+          try {
+            $responseText = $reader.ReadToEnd()
+            $responseText = ($responseText -replace "\s+", " ").Trim()
+            if ($responseText.Length -gt 280) {
+              $responseText = $responseText.Substring(0, 277) + "..."
+            }
+            if ($responseText -and $messages -notcontains $responseText) {
+              $messages += $responseText
+            }
+          }
+          finally {
+            $reader.Dispose()
+          }
+        }
+      }
+      catch {
+      }
+    }
+
+    if ($exception -is [System.AggregateException]) {
+      foreach ($inner in $exception.Flatten().InnerExceptions) {
+        $innerMessage = [string]$inner.Message
+        if ($innerMessage -and $messages -notcontains $innerMessage) {
+          $messages += $innerMessage
+        }
+      }
+    }
+
+    $exception = $exception.InnerException
+  }
+
+  if ($messages.Count -eq 0 -and $errorOrException) {
+    return [string]$errorOrException
+  }
+
+  return ($messages -join " | ")
+}
+
 function Read-ConfigFile {
   if (-not (Test-Path $ConfigPath)) {
     return $null
@@ -807,6 +864,13 @@ function Fetch-FabriXModels {
       throw "조회된 모델이 없습니다."
     }
     return $normalized
+  }
+  catch {
+    $message = Resolve-ExceptionMessage $_
+    if (-not $message) {
+      $message = "알 수 없는 오류"
+    }
+    throw "모델 조회 실패: $message"
   }
   finally {
     $client.Dispose()
@@ -1447,7 +1511,7 @@ $controls.LoadModelsButton.Add_Click({
     Load-FabriXModels
   }
   catch {
-    Set-Toast "SetupToastText" $_.Exception.Message
+    Set-Toast "SetupToastText" (Resolve-ExceptionMessage $_)
   }
 })
 
@@ -1486,7 +1550,7 @@ $controls.StartButton.Add_Click({
     Show-RunningState $message
   }
   catch {
-    Set-Toast "SetupToastText" $_.Exception.Message
+    Set-Toast "SetupToastText" (Resolve-ExceptionMessage $_)
   }
 })
 
@@ -1511,7 +1575,7 @@ $controls.InstallOpenCodeButton.Add_Click({
     Set-Toast "RunningToastText" "OpenCode config를 적용했습니다."
   }
   catch {
-    Set-Toast "RunningToastText" $_.Exception.Message
+    Set-Toast "RunningToastText" (Resolve-ExceptionMessage $_)
   }
 })
 
